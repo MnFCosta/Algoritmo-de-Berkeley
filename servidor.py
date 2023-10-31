@@ -1,5 +1,7 @@
 import time
+import socket
 import random
+import threading
 import sys
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton
@@ -48,6 +50,10 @@ class TelaPrincipal(QWidget):
         self.botao_cancelar.clicked.connect(self.close)
         self.botao_ajustar.clicked.connect(self.ajustar_relogios)
 
+        # Iniciando servidor em uma thread separada
+        self.servidor = Servidor()
+        self.servidor.start()
+
         # Iniciando relogio em uma thread separada
         self.relogio = ThreadRelogio()
         self.relogio.start()
@@ -59,9 +65,56 @@ class TelaPrincipal(QWidget):
         self.tempo.setText(self.tempo_atual)
     
     def ajustar_relogios(self):
-        self.teste.setText(f'O horário atual é {self.tempo_atual}')
-              
+        self.servidor.atualizar_tempos_clientes(self.tempo_atual)
 
+class Servidor(QThread):
+    sinal = pyqtSignal(str)
+
+    def __init__(self, parent=None,):
+        super().__init__(parent)
+        self.cliente_sockets = []
+
+    def atualizar_tempos_clientes(self, tempo):
+        for client_socket in self.cliente_sockets:
+            try:
+                client_socket.send(tempo.encode())
+            except Exception as e:
+                print("Erro ao enviar o tempo ao cliente:", str(e))
+    
+    def responde_cliente(self, cliente, endereco):
+        print(f"Conexão aceita de {endereco[1]}")
+        self.cliente_sockets.append(cliente) 
+        print("Clientes conectados:", len(self.cliente_sockets))
+
+    def run(self):
+        HOST = '127.0.0.1'
+        PORT = 8000
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((HOST, PORT))
+        s.listen(4)
+        print("Servidor escutando...")
+
+        while True:
+            conn, ender = s.accept()
+            self.responde_cliente(conn, ender)
+            # Start a new thread to handle the client
+            client_thread = ClienteHandler(conn)
+            client_thread.start()
+
+class ClienteHandler(QThread):
+    def __init__(self, socket_cliente):
+        super().__init__()
+        self.socket_cliente = socket_cliente
+
+    def run(self):
+        while True:
+            data = self.socket_cliente.recv(1024)
+            if not data:
+                break
+            
+        self.socket_cliente.close()
+        
+    
 class ThreadRelogio(QThread):
     sinal = pyqtSignal(str)
 
