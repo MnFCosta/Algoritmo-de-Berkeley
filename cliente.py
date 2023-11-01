@@ -75,7 +75,21 @@ class Cliente(QThread):
         self.relogio.sinal.connect(self.atualizar_tempo)
 
         self.algoritmo_christian()
-            
+
+        while True:
+            data = self.cliente.recv(1024).decode()
+
+            tempo_formatado = str(f'{data}:').split(".")[0] 
+
+            tempo_formatado = tempo_formatado.split(':')
+
+            h = int(tempo_formatado[0])
+            m = int(tempo_formatado[1])
+            s = int(tempo_formatado[2])
+
+            self.relogio.atualizar_tempo_relogio(h,m,s)
+
+
     def atualizar_tempo(self, tempo):
         self.sinal.emit(tempo)
     
@@ -97,7 +111,12 @@ class Cliente(QThread):
         offset1 = (t1 - t0).total_seconds()
         offset2 = (t2 - t3).total_seconds()
 
-        tempo_sincronizacao = (offset1 + offset2) / 2
+        converter_timedelta = f"{0}:{0}:{0}"
+        converter_timedelta = datetime.datetime.strptime(converter_timedelta.lstrip(), '%H:%M:%S')
+
+        t0 = t0 - converter_timedelta
+
+        tempo_sincronizacao = (t0.total_seconds() + (offset1 + offset2)) / 2
         tempo_timedelta = timedelta(seconds=tempo_sincronizacao)
 
         # formata pra H:M:S
@@ -110,6 +129,7 @@ class Cliente(QThread):
         s = int(tempo_formatado[2])
 
         self.relogio.atualizar_tempo_relogio(h,m,s)
+
 
         
 class ThreadRelogio(QThread):
@@ -131,11 +151,18 @@ class ThreadRelogio(QThread):
                 self.h+=1
                 self.m = 0
                 self.s = 0
-            if self.s == 59:
+            if self.s >= 59:
                 self.m+=1
                 self.s = 0
 
-            self.s += 1
+            opcao = random.randint(1,2)
+            if opcao == 1:
+                self.s += random.randint(1,5)
+            else:
+                self.s -= random.randint(1,5)
+                if self.s <= 0:
+                    self.s = 0
+            
             tempo = f'{self.h}:{self.m}:{self.s}' 
             self.sinal.emit(tempo)
             time.sleep(1)
@@ -144,30 +171,11 @@ class ThreadRelogio(QThread):
         tempo = f'{self.h}:{self.m}:{self.s}' 
         return tempo
     
+    
     def atualizar_tempo_relogio(self, h, m, s):
-        print("tempo atualizado!")
-        converter_timedelta = f"{0}:{0}:{0}"
-        tempo_atual = f"{self.h}:{self.m}:{self.s}"
-        tempo_recebido = f"{h}:{m}:{s}"
-
-        tempo_atual = datetime.datetime.strptime(tempo_atual.lstrip(), '%H:%M:%S')
-        tempo_recebido = datetime.datetime.strptime(tempo_recebido.lstrip(), '%H:%M:%S')
-        converter_timedelta = datetime.datetime.strptime(converter_timedelta.lstrip(), '%H:%M:%S')
-
-        tempo_atual = tempo_atual - converter_timedelta
-        tempo_recebido = tempo_recebido - converter_timedelta
-
-        tempo_correto = (tempo_atual + tempo_recebido).total_seconds()
-
-        tempo_correto = timedelta(seconds=tempo_correto)
-
-        tempo_formatado = str(f'{tempo_correto}:').split(".")[0] 
-
-        tempo_formatado = tempo_formatado.split(':')
-
-        self.h = int(tempo_formatado[0])
-        self.m = int(tempo_formatado[1])
-        self.s = int(tempo_formatado[2])
+        self.h = h
+        self.m = m
+        self.s = s
 
         
 

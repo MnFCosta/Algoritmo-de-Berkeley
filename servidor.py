@@ -61,7 +61,7 @@ class TelaPrincipal(QWidget):
         self.tempo.setText(self.t)
     
     def ajustar_relogios(self):
-        self.servidor.atualizar_tempos_clientes(self.tempo_atual)
+        self.servidor.atualizar_tempos_clientes(self.t)
 
 class Servidor(QThread):
     sinal = pyqtSignal(str)
