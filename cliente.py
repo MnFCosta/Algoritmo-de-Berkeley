@@ -1,6 +1,8 @@
 import time
 import socket
 import random
+import datetime
+from datetime import timedelta
 import sys
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton
@@ -46,23 +48,12 @@ class TelaPrincipal(QWidget):
         self.cliente = Cliente()
         self.cliente.start()
 
-        # Iniciando relogio em uma thread separada
-        self.relogio = ThreadRelogio()
-        self.relogio.start()
+        self.cliente.sinal.connect(self.atualizar_tempo_interface)
 
-        self.relogio.sinal.connect(self.atualizar_tempo)
-        self.cliente.sinal.connect(self.atualizar_tempo_cliente)
-    
-    def atualizar_tempo(self, tempo):
+    def atualizar_tempo_interface(self, tempo):
         self.t = tempo
         self.tempo.setText(self.t)
     
-    def atualizar_tempo_cliente(self, tempo):
-        print(tempo)
-        h = tempo[0:1]
-        m = tempo[2:3]
-        s = tempo[4:]
-        self.relogio.atualizar_tempo_relogio(int(h),int(m),int(s))
 
 class Cliente(QThread):
     sinal = pyqtSignal(str)
@@ -74,16 +65,53 @@ class Cliente(QThread):
         HOST = '127.0.0.1'
         PORT = 8000
         #Criando objeto socket IPV4 usando protocolo TCP.
-        cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        cliente.connect((HOST,PORT))
-        cliente.send(str.encode("Cliente conectado!"))
+        self.cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.cliente.connect((HOST,PORT))
 
-        while True:
-            tempo = cliente.recv(1024).decode()
-            self.sinal.emit(tempo)
+        # Iniciando relogio em uma thread separada
+        self.relogio = ThreadRelogio()
+        self.relogio.start()
+
+        self.relogio.sinal.connect(self.atualizar_tempo)
+
+        self.algoritmo_christian()
+            
+    def atualizar_tempo(self, tempo):
+        self.sinal.emit(tempo)
+    
+    def algoritmo_christian(self):
+        t0 = self.relogio.get_tempo()
+        self.cliente.send(str.encode(t0))
+        data = self.cliente.recv(1024).decode()
+        t3 = self.relogio.get_tempo()
+
+        valores = data.split('|')[:-1]
+
+        #converte string para datetime
+        t0 = datetime.datetime.strptime(t0.lstrip(), '%H:%M:%S')
+        t1 = datetime.datetime.strptime(valores[1].lstrip(), '%H:%M:%S')
+        t2 = datetime.datetime.strptime(valores[2].lstrip(), '%H:%M:%S')
+        t3 = datetime.datetime.strptime(t3.lstrip(), '%H:%M:%S')
 
         
+        offset1 = (t1 - t0).total_seconds()
+        offset2 = (t2 - t3).total_seconds()
 
+        tempo_sincronizacao = (offset1 + offset2) / 2
+        tempo_timedelta = timedelta(seconds=tempo_sincronizacao)
+
+        # formata pra H:M:S
+        tempo_formatado = str(f'{tempo_timedelta}:').split(".")[0] 
+
+        tempo_formatado = tempo_formatado.split(':')
+
+        h = int(tempo_formatado[0])
+        m = int(tempo_formatado[1])
+        s = int(tempo_formatado[2])
+
+        self.relogio.atualizar_tempo_relogio(h,m,s)
+
+        
 class ThreadRelogio(QThread):
     sinal = pyqtSignal(str)
 
@@ -112,11 +140,36 @@ class ThreadRelogio(QThread):
             self.sinal.emit(tempo)
             time.sleep(1)
     
+    def get_tempo(self):
+        tempo = f'{self.h}:{self.m}:{self.s}' 
+        return tempo
+    
     def atualizar_tempo_relogio(self, h, m, s):
-        self.h = h
-        self.m = m
-        self.s = s
-        print(f"{self.h}:{self.m}:{self.s}")
+        print("tempo atualizado!")
+        converter_timedelta = f"{0}:{0}:{0}"
+        tempo_atual = f"{self.h}:{self.m}:{self.s}"
+        tempo_recebido = f"{h}:{m}:{s}"
+
+        tempo_atual = datetime.datetime.strptime(tempo_atual.lstrip(), '%H:%M:%S')
+        tempo_recebido = datetime.datetime.strptime(tempo_recebido.lstrip(), '%H:%M:%S')
+        converter_timedelta = datetime.datetime.strptime(converter_timedelta.lstrip(), '%H:%M:%S')
+
+        tempo_atual = tempo_atual - converter_timedelta
+        tempo_recebido = tempo_recebido - converter_timedelta
+
+        tempo_correto = (tempo_atual + tempo_recebido).total_seconds()
+
+        tempo_correto = timedelta(seconds=tempo_correto)
+
+        tempo_formatado = str(f'{tempo_correto}:').split(".")[0] 
+
+        tempo_formatado = tempo_formatado.split(':')
+
+        self.h = int(tempo_formatado[0])
+        self.m = int(tempo_formatado[1])
+        self.s = int(tempo_formatado[2])
+
+        
 
 #Widgets
 class QuadradoWidget(QWidget):

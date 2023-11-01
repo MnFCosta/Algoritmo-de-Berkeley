@@ -54,15 +54,11 @@ class TelaPrincipal(QWidget):
         self.servidor = Servidor()
         self.servidor.start()
 
-        # Iniciando relogio em uma thread separada
-        self.relogio = ThreadRelogio()
-        self.relogio.start()
+        self.servidor.sinal.connect(self.atualizar_tempo_interface)
 
-        self.relogio.sinal.connect(self.atualizar_tempo)
-    
-    def atualizar_tempo(self, tempo):
-        self.tempo_atual = tempo
-        self.tempo.setText(self.tempo_atual)
+    def atualizar_tempo_interface(self, tempo):
+        self.t = tempo
+        self.tempo.setText(self.t)
     
     def ajustar_relogios(self):
         self.servidor.atualizar_tempos_clientes(self.tempo_atual)
@@ -73,6 +69,7 @@ class Servidor(QThread):
     def __init__(self, parent=None,):
         super().__init__(parent)
         self.cliente_sockets = []
+        self.tempo_atual = 0
 
     def atualizar_tempos_clientes(self, tempo):
         for client_socket in self.cliente_sockets:
@@ -81,10 +78,15 @@ class Servidor(QThread):
             except Exception as e:
                 print("Erro ao enviar o tempo ao cliente:", str(e))
     
-    def responde_cliente(self, cliente, endereco):
+    def conecta_cliente(self, cliente, endereco):
         print(f"Conexão aceita de {endereco[1]}")
         self.cliente_sockets.append(cliente) 
         print("Clientes conectados:", len(self.cliente_sockets))
+    
+    def atualizar_tempo(self, tempo):
+        self.tempo_atual = tempo
+        self.sinal.emit(tempo)
+        
 
     def run(self):
         HOST = '127.0.0.1'
@@ -93,22 +95,33 @@ class Servidor(QThread):
         s.bind((HOST, PORT))
         s.listen(4)
         print("Servidor escutando...")
+        
+        # Iniciando relogio em uma thread separada
+        self.relogio = ThreadRelogio()
+        self.relogio.start()
+
+        self.relogio.sinal.connect(self.atualizar_tempo)
 
         while True:
             conn, ender = s.accept()
-            self.responde_cliente(conn, ender)
+            self.conecta_cliente(conn, ender)
             # Start a new thread to handle the client
-            client_thread = ClienteHandler(conn)
+            client_thread = ClienteHandler(conn, self)
             client_thread.start()
 
 class ClienteHandler(QThread):
-    def __init__(self, socket_cliente):
+    def __init__(self, socket_cliente, servidor):
         super().__init__()
         self.socket_cliente = socket_cliente
+        self.servidor_instance = servidor
 
     def run(self):
         while True:
-            data = self.socket_cliente.recv(1024)
+            data = self.socket_cliente.recv(1024).decode()
+            t1 = self.servidor_instance.tempo_atual
+            t2 = self.servidor_instance.tempo_atual
+            self.socket_cliente.send(str.encode(f'{data}|{t1}|{t2}|'))
+            
             if not data:
                 break
             
@@ -142,6 +155,10 @@ class ThreadRelogio(QThread):
             tempo = f'{h}:{m}:{s}' 
             self.sinal.emit(tempo)
             time.sleep(1)
+    
+    def get_tempo(self):
+        tempo = f'{self.h}:{self.m}:{self.s}' 
+        return tempo
 
 #Widgets
 class QuadradoWidget(QWidget):
