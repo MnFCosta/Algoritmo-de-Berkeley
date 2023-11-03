@@ -2,6 +2,8 @@ import time
 import socket
 import random
 import threading
+import datetime
+from datetime import timedelta
 import sys
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton
@@ -69,12 +71,14 @@ class Servidor(QThread):
     def __init__(self, parent=None,):
         super().__init__(parent)
         self.cliente_sockets = []
+        self.tempos_clientes = []
         self.tempo_atual = 0
 
     def atualizar_tempos_clientes(self, tempo):
         for client_socket in self.cliente_sockets:
             try:
-                client_socket.send(tempo.encode())
+                client_socket.send('PING'.encode())
+
             except Exception as e:
                 print("Erro ao enviar o tempo ao cliente:", str(e))
     
@@ -86,6 +90,66 @@ class Servidor(QThread):
     def atualizar_tempo(self, tempo):
         self.tempo_atual = tempo
         self.sinal.emit(tempo)
+    
+    def algoritmo_berkley(self):
+        clientes = []
+        tempos = []
+        for i in self.tempos_clientes:
+            clientes.append(i.split('|')[0])
+            tempos.append(i.split('|')[1])
+        
+        tservidor = self.relogio.get_tempo()
+        tservidor = datetime.datetime.strptime(tservidor, '%H:%M:%S')
+        
+        converter_timedelta = f"{0}:{0}:{0}"
+        converter_timedelta = datetime.datetime.strptime(converter_timedelta.lstrip(), '%H:%M:%S')
+
+        tc1, tc2, tc3, tc4 = datetime.timedelta(), datetime.timedelta(), datetime.timedelta(), datetime.timedelta()
+
+        if len(tempos) > 0:
+            tc1 = datetime.datetime.strptime(tempos[0].lstrip(), '%H:%M:%S')
+            tc1 = tc1 - converter_timedelta
+        if len(tempos) > 1:
+            tc2 = datetime.datetime.strptime(tempos[1].lstrip(), '%H:%M:%S')
+            tc2 = tc2 - converter_timedelta
+        if len(tempos) > 2:
+            tc3 = datetime.datetime.strptime(tempos[2].lstrip(), '%H:%M:%S')
+            tc3 = tc3 - converter_timedelta
+        if len(tempos) > 3:
+            tc4 = datetime.datetime.strptime(tempos[3].lstrip(), '%H:%M:%S')
+            tc4 = tc4 - converter_timedelta
+
+        tservidor = tservidor - converter_timedelta
+
+        soma_segundos = tservidor + tc1 + tc2 + tc3 + tc4
+
+        soma_segundos = soma_segundos.total_seconds()
+
+        tempo_correto = soma_segundos/(len(clientes) + 1)
+
+        tempo_timedelta = timedelta(seconds=tempo_correto)
+
+        # formata pra H:M:S
+        tempo_formatado = str(f'{tempo_timedelta}').split(".")[0]
+
+        tempo_formatado = tempo_formatado.split(':')
+
+        h = int(tempo_formatado[0])
+        m = int(tempo_formatado[1])
+        s = int(tempo_formatado[2])
+
+        self.relogio.h = h
+        self.relogio.m = m
+        self.relogio.s = s
+
+        for client_socket in self.cliente_sockets:
+            try:
+                client_socket.send(f'{tempo_formatado[0]}:{tempo_formatado[1]}:{tempo_formatado[2]}'.encode())
+
+            except Exception as e:
+                print("Erro ao enviar o tempo ao cliente:", str(e))
+
+        self.tempos_clientes.clear()
         
 
     def run(self):
@@ -109,23 +173,40 @@ class Servidor(QThread):
             client_thread = ClienteHandler(conn, self)
             client_thread.start()
 
+
 class ClienteHandler(QThread):
     def __init__(self, socket_cliente, servidor):
         super().__init__()
         self.socket_cliente = socket_cliente
         self.servidor_instance = servidor
+    
+    def handle_christian(self, data):
+        t1 = self.servidor_instance.tempo_atual
+        t2 = self.servidor_instance.tempo_atual
+        self.socket_cliente.send(str.encode(f'{data}|{t1}|{t2}|'))
+    
+    def handle_berkley(self, data):
+        data = f'{self.socket_cliente}|{data}'
+        self.servidor_instance.tempos_clientes.append(data)
+        if len(self.servidor_instance.tempos_clientes) == len(self.servidor_instance.cliente_sockets):
+            self.servidor_instance.algoritmo_berkley()
 
     def run(self):
         while True:
             data = self.socket_cliente.recv(1024).decode()
-            t1 = self.servidor_instance.tempo_atual
-            t2 = self.servidor_instance.tempo_atual
-            self.socket_cliente.send(str.encode(f'{data}|{t1}|{t2}|'))
+
+            
+            if data.split('|')[0] == "RESPOSTA":
+                self.handle_berkley(data.split('|')[1])
+            else:
+                self.handle_christian(data.split('|')[1])
             
             if not data:
                 break
             
         self.socket_cliente.close()
+    
+    
         
     
 class ThreadRelogio(QThread):
@@ -133,26 +214,27 @@ class ThreadRelogio(QThread):
 
     def __init__(self, parent=None,):
         super().__init__(parent)
+        self.h = 0
+        self.m = 0
+        self.s = 0
+
 
     def run(self):
-        h = 0
-        m = 0
-        s = 0
         while True:
-            if h == 23 and m == 59 and s == 59:
-                h = 0
-                m = 0
-                s = 0
-            if m == 59 and s == 59:
-                h+=1
-                m = 0
-                s = 0
-            if s == 59:
-                m+=1
-                s = 0
+            if self.h == 23 and self.m == 59 and self.s == 59:
+                self.h = 0
+                self.m = 0
+                self.s = 0
+            if self.m == 59 and self.s == 59:
+                self.h+=1
+                self.m = 0
+                self.s = 0
+            if self.s >= 59:
+                self.m+=1
+                self.s = 0
 
-            s += 1
-            tempo = f'{h}:{m}:{s}' 
+            self.s += 1
+            tempo = f'{self.h}:{self.m}:{self.s}' 
             self.sinal.emit(tempo)
             time.sleep(1)
     

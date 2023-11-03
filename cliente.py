@@ -79,22 +79,30 @@ class Cliente(QThread):
         while True:
             data = self.cliente.recv(1024).decode()
 
-            tempo_formatado = str(f'{data}:').split(".")[0] 
+            if data == "PING":
+                tempo = f'RESPOSTA|{self.relogio.get_tempo()}'
+                self.cliente.send(str.encode(tempo))
+            else:
+                tempo_formatado = str(f'{data}:').split(".")[0] 
 
-            tempo_formatado = tempo_formatado.split(':')
+                print(tempo_formatado)
 
-            h = int(tempo_formatado[0])
-            m = int(tempo_formatado[1])
-            s = int(tempo_formatado[2])
+                tempo_formatado = tempo_formatado.split(':')
 
-            self.relogio.atualizar_tempo_relogio(h,m,s)
+                h = int(tempo_formatado[0])
+                m = int(tempo_formatado[1])
+                s = int(tempo_formatado[2])
+
+                self.relogio.relogios = 1
+
+                self.relogio.atualizar_tempo_relogio(h,m,s)
 
 
     def atualizar_tempo(self, tempo):
         self.sinal.emit(tempo)
     
     def algoritmo_christian(self):
-        t0 = self.relogio.get_tempo()
+        t0 = f'CHRISTIAN|{self.relogio.get_tempo()}'
         self.cliente.send(str.encode(t0))
         data = self.cliente.recv(1024).decode()
         t3 = self.relogio.get_tempo()
@@ -102,7 +110,7 @@ class Cliente(QThread):
         valores = data.split('|')[:-1]
 
         #converte string para datetime
-        t0 = datetime.datetime.strptime(t0.lstrip(), '%H:%M:%S')
+        t0 = datetime.datetime.strptime(valores[0].lstrip(), '%H:%M:%S')
         t1 = datetime.datetime.strptime(valores[1].lstrip(), '%H:%M:%S')
         t2 = datetime.datetime.strptime(valores[2].lstrip(), '%H:%M:%S')
         t3 = datetime.datetime.strptime(t3.lstrip(), '%H:%M:%S')
@@ -140,6 +148,7 @@ class ThreadRelogio(QThread):
         self.h = 0
         self.m = 0
         self.s = 0
+        self.relogios = 0
 
     def run(self):
         while True:
@@ -155,13 +164,17 @@ class ThreadRelogio(QThread):
                 self.m+=1
                 self.s = 0
 
-            opcao = random.randint(1,2)
-            if opcao == 1:
-                self.s += random.randint(1,5)
+            if self.relogios == 0:
+                opcao = random.randint(1,2)
+                if opcao == 1:
+                    self.s += random.randint(1,5)
+                else:
+                    self.s -= random.randint(1,5)
+                    if self.s <= 0:
+                        self.s = 0
             else:
-                self.s -= random.randint(1,5)
-                if self.s <= 0:
-                    self.s = 0
+                self.s+=1
+                
             
             tempo = f'{self.h}:{self.m}:{self.s}' 
             self.sinal.emit(tempo)
