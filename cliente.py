@@ -54,13 +54,14 @@ class TelaPrincipal(QWidget):
         self.t = tempo
         self.tempo.setText(self.t)
     
-
+#Threado do cliente aonde dados recebidos do servidor são tratados
 class Cliente(QThread):
     sinal = pyqtSignal(str)
 
     def __init__(self, parent=None,):
         super().__init__(parent)
 
+    #Quando iniciada, sempre executa o algoritmo de christian para alinhar seu tempo com o do servidor
     def run(self):
         HOST = '127.0.0.1'
         PORT = 8000
@@ -76,16 +77,17 @@ class Cliente(QThread):
 
         self.algoritmo_christian()
 
+        #Espera por dados enviados pelo servidor e os trata de maneiras diferentes dependendo do tipo de dado
         while True:
             data = self.cliente.recv(1024).decode()
 
+            #Quando recebe o ping da primeira etapa do algoritmo de berkley, retorna ao servidor o tempo atual do cliente
             if data == "PING":
                 tempo = f'RESPOSTA|{self.relogio.get_tempo()}'
                 self.cliente.send(str.encode(tempo))
             else:
+                #Quando o dado não é um ping, atualiza o tempo do relógio
                 tempo_formatado = str(f'{data}:').split(".")[0] 
-
-                print(tempo_formatado)
 
                 tempo_formatado = tempo_formatado.split(':')
 
@@ -97,14 +99,16 @@ class Cliente(QThread):
 
                 self.relogio.atualizar_tempo_relogio(h,m,s)
 
-
+    #emite o tempo para a interface atualizar
     def atualizar_tempo(self, tempo):
         self.sinal.emit(tempo)
     
+    #Algoritmo de christian, envia o tempo inicial do cliente, e recebe os tempos do servidor
     def algoritmo_christian(self):
         t0 = f'CHRISTIAN|{self.relogio.get_tempo()}'
         self.cliente.send(str.encode(t0))
         data = self.cliente.recv(1024).decode()
+        # t3 = tempo de retorno
         t3 = self.relogio.get_tempo()
 
         valores = data.split('|')[:-1]
@@ -115,7 +119,7 @@ class Cliente(QThread):
         t2 = datetime.datetime.strptime(valores[2].lstrip(), '%H:%M:%S')
         t3 = datetime.datetime.strptime(t3.lstrip(), '%H:%M:%S')
 
-        
+        # calcula diferença de tempos
         offset1 = (t1 - t0).total_seconds()
         offset2 = (t2 - t3).total_seconds()
 
@@ -124,6 +128,7 @@ class Cliente(QThread):
 
         t0 = t0 - converter_timedelta
 
+        #calcula o tempo de sincronização com o servidor
         tempo_sincronizacao = (t0.total_seconds() + (offset1 + offset2)) / 2
         tempo_timedelta = timedelta(seconds=tempo_sincronizacao)
 
@@ -139,7 +144,8 @@ class Cliente(QThread):
         self.relogio.atualizar_tempo_relogio(h,m,s)
 
 
-        
+
+#Relogio do cliente, possui dois modos, normal e com atrasos aleatórios      
 class ThreadRelogio(QThread):
     sinal = pyqtSignal(str)
 
@@ -164,6 +170,7 @@ class ThreadRelogio(QThread):
                 self.m+=1
                 self.s = 0
 
+            #Troca entre o relógio correto e o com incrementos aleatórios
             if self.relogios == 0:
                 opcao = random.randint(1,2)
                 if opcao == 1:
@@ -179,32 +186,19 @@ class ThreadRelogio(QThread):
             tempo = f'{self.h}:{self.m}:{self.s}' 
             self.sinal.emit(tempo)
             time.sleep(1)
-    
+
+    #retorna o tempo atual do cliente
     def get_tempo(self):
         tempo = f'{self.h}:{self.m}:{self.s}' 
         return tempo
     
-    
+    #atualiza o tempo do relógio do cliente
     def atualizar_tempo_relogio(self, h, m, s):
         self.h = h
         self.m = m
         self.s = s
 
-        
-
-#Widgets
-class QuadradoWidget(QWidget):
-    cor_quadrado = QColor(255, 0, 0)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setPen(QColor(0, 0, 0))
-        painter.setBrush(self.cor_quadrado)
-        
-        painter.drawRect(0, 0, 150, 150)
     
-    
-
 if __name__ == '__main__':
     #Cria uma instancia da aplicação PyQt, necessária para configurar a interface gráfica e o loop de eventos
     app = QApplication(sys.argv)
